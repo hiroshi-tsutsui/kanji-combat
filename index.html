@@ -1,0 +1,340 @@
+<!DOCTYPE html><html><head><title>kanji-combat</title><link rel="manifest" href="manifest.json">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    body { background-color: #1a1a1a; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; user-select: none; }
+    h1 { border-bottom: 2px solid #4a90e2; padding-bottom: 10px; color: #4a90e2; }
+    button { background: #333; color: #fff; border: 1px solid #555; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; transition: background 0.2s; }
+    button:hover { background: #555; }
+    input, select { background: #222; color: #fff; border: 1px solid #555; padding: 8px; border-radius: 4px; font-size: 1.2em; text-align: center; }
+    .card, .block { background-color: #333 !important; color: #fff; border: 1px solid #555 !important; }
+    
+    /* Animations */
+    @keyframes shake {
+      0% { transform: translate(1px, 1px) rotate(0deg); }
+      10% { transform: translate(-1px, -2px) rotate(-1deg); }
+      20% { transform: translate(-3px, 0px) rotate(1deg); }
+      30% { transform: translate(3px, 2px) rotate(0deg); }
+      40% { transform: translate(1px, -1px) rotate(1deg); }
+      50% { transform: translate(-1px, 2px) rotate(-1deg); }
+      60% { transform: translate(-3px, 1px) rotate(0deg); }
+      70% { transform: translate(3px, 1px) rotate(-1deg); }
+      80% { transform: translate(-1px, -1px) rotate(1deg); }
+      90% { transform: translate(1px, 2px) rotate(0deg); }
+      100% { transform: translate(1px, -2px) rotate(-1deg); }
+    }
+    .shake { animation: shake 0.5s; animation-iteration-count: 1; }
+    
+    .damage-text {
+        position: absolute;
+        color: red;
+        font-weight: bold;
+        font-size: 2em;
+        animation: floatUp 1s forwards;
+        pointer-events: none;
+    }
+    @keyframes floatUp {
+        0% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; transform: translateY(-50px); }
+    }
+
+    /* Health Bar CSS */
+    .health-container { width: 100%; background-color: #555; height: 20px; border-radius: 10px; overflow: hidden; margin-top: 5px; position: relative; }
+    .health-fill { height: 100%; width: 100%; transition: width 0.3s ease; }
+    .hp-text { font-size: 0.8em; text-align: right; margin-top: 2px; }
+
+    #log {
+        height: 100px;
+        overflow-y: auto;
+        border: 1px solid #333;
+        background: #000;
+        padding: 5px;
+        font-family: monospace;
+        margin-top: 10px;
+        color: #aaa;
+        font-size: 0.9em;
+    }
+    .log-hit { color: #4a90e2; }
+    .log-miss { color: #e24a4a; }
+    .log-win { color: #f1c40f; }
+    .log-damage { color: #e74c3c; font-weight: bold; }
+
+    /* Mobile tweaks */
+    @media (max-width: 600px) {
+        body { padding: 10px; }
+        h1 { font-size: 1.5em; }
+        #game-container { flex-direction: column; }
+        #player, #enemy { width: 100%; margin-bottom: 10px; box-sizing: border-box; }
+    }
+</style>
+
+</head><body>
+<div style="background:#111; padding:10px; border-bottom:1px solid #333; margin-bottom:20px;">
+    <a href="../index.html" style="color:#4a90e2; text-decoration:none; font-weight:bold;">⬅ Fleet Dashboard</a>
+</div>
+
+    <h1>kanji-combat</h1><div id="score-display" style="position:fixed; top:10px; right:10px; background:#000; padding:5px; border:1px solid #444;">Oni Slain: 0</div>
+    
+<div id="game-container" style="display:flex; justify-content:space-between; padding:20px; max-width: 800px; margin: 0 auto;">
+  <div id="player" style="border:2px solid #4a90e2; padding:20px; border-radius: 8px; flex:1; margin-right: 10px;">
+    <h2>Player</h2>
+    <div class="health-container"><div id="hp-bar-player" class="health-fill" style="background-color: #4a90e2;"></div></div>
+    <div id="hp-player" class="hp-text">HP: 100/100</div>
+    <div id="combo-display" style="margin-top: 10px; color: yellow; font-weight: bold;">Combo: 0x</div>
+  </div>
+  
+  <div id="enemy" style="border:2px solid #e24a4a; padding:20px; border-radius: 8px; text-align: center; flex:1; margin-left: 10px;">
+    <h2 id="enemy-name">Oni (鬼)</h2>
+    <div class="health-container"><div id="hp-bar-enemy" class="health-fill" style="background-color: #e24a4a;"></div></div>
+    <div id="hp-enemy" class="hp-text">HP: 100/100</div>
+    <div id="enemy-sprite" style="font-size:6em; margin: 10px 0; transition: transform 0.1s;">鬼</div>
+    <div id="enemy-timer-bar" style="height: 5px; background: red; width: 0%;"></div>
+  </div>
+</div>
+
+<div id="combat-ui" style="text-align:center; padding:20px; background:#222; border-radius: 8px; margin-top: 20px; max-width: 800px; margin: 20px auto;">
+    <h3>Reading: <span id="target-kanji" style="font-size:2em; color: #e24a4a;">火</span></h3>
+    <input type="text" id="combat-input" placeholder="Type romaji..." onkeydown="if(event.key==='Enter') submitCombat()" autocomplete="off">
+    <button onclick="submitCombat()" style="background: #e24a4a; border-color: #c0392b;">Strike!</button>
+    
+    <div id="log"></div>
+</div>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js');
+    });
+  }
+</script>
+    
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playTone(freq, type='sine', duration=0.1) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+</script>
+
+<script>
+const enemies = [
+    {k:'火', r:'hi', hp:100, maxHp: 100, name: 'Fire Imp', atk: 10}, 
+    {k:'水', r:'mizu', hp:100, maxHp: 100, name: 'Water Slime', atk: 8}, 
+    {k:'木', r:'ki', hp:150, maxHp: 150, name: 'Treant', atk: 12},
+    {k:'山', r:'yama', hp:200, maxHp: 200, name: 'Mountain Golem', atk: 20},
+    {k:'川', r:'kawa', hp:120, maxHp: 120, name: 'River Spirit', atk: 10},
+    {k:'空', r:'sora', hp:180, maxHp: 180, name: 'Sky Harpy', atk: 15},
+    {k:'刀', r:'katana', hp:150, maxHp: 150, name: 'Cursed Blade', atk: 25},
+    {k:'雨', r:'ame', hp:100, maxHp: 100, name: 'Rain Spirit', atk: 5}
+];
+
+let player = { hp: 100, maxHp: 100 };
+let currentEnemyIdx = 0;
+let combo = 0;
+let enemyTimer = null;
+let attackProgress = 0;
+
+function log(msg, cls='') {
+    const el = document.getElementById('log');
+    const line = document.createElement('div');
+    line.innerHTML = msg;
+    if(cls) line.className = cls;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+}
+
+function updateHealthUI(target, isPlayer=false) {
+    const hpId = isPlayer ? 'hp-player' : 'hp-enemy';
+    const barId = isPlayer ? 'hp-bar-player' : 'hp-bar-enemy';
+    const max = target.maxHp || 100;
+    const current = Math.max(0, target.hp);
+    
+    document.getElementById(hpId).innerText = `HP: ${current}/${max}`;
+    const pct = (current / max) * 100;
+    document.getElementById(barId).style.width = pct + '%';
+}
+
+function startEnemyTimer() {
+    clearInterval(enemyTimer);
+    attackProgress = 0;
+    const bar = document.getElementById('enemy-timer-bar');
+    
+    enemyTimer = setInterval(() => {
+        attackProgress += 1;
+        bar.style.width = attackProgress + '%';
+        if(attackProgress >= 100) {
+            enemyAttack();
+            attackProgress = 0;
+        }
+    }, 50); // Attack every 5 seconds
+}
+
+function enemyAttack() {
+    let enemy = enemies[currentEnemyIdx];
+    // Check if it's a boss (dynamically generated or flagged)
+    if (document.getElementById('enemy-name').innerText.includes('BOSS')) {
+        // Boss Logic needed here, but locally we might just rely on the object props
+        // If we use a temporary object for boss, we need to access it.
+        // Let's rely on global 'currentEnemy' object instead of looking up 'enemies' array?
+        // Wait, the current logic uses 'enemies[currentEnemyIdx]'.
+        // I need to refactor spawnEnemy to set a global 'activeEnemy' first.
+    }
+    
+    // Existing logic uses array lookup. I will refactor to use a global 'activeEnemy'.
+    
+    let dmg = activeEnemy.atk;
+    
+    // Special Boss Attack?
+    if (activeEnemy.isBoss && Math.random() < 0.3) {
+        dmg *= 2;
+        log(`🔥 ${activeEnemy.name} uses SPECIAL ATTACK! ${dmg} dmg!`, 'log-damage');
+        playTone(50, 'sawtooth', 0.5);
+    } else {
+        log(`💥 ${activeEnemy.name} hits you for ${dmg} dmg!`, 'log-damage');
+        playTone(100, 'sawtooth', 0.2);
+    }
+
+    player.hp -= dmg;
+    updateHealthUI(player, true);
+    
+    // Shake player
+    const pDiv = document.getElementById('player');
+    pDiv.classList.add('shake');
+    setTimeout(() => pDiv.classList.remove('shake'), 500);
+    
+    if(player.hp <= 0) {
+        gameOver();
+    }
+}
+
+function gameOver() {
+    clearInterval(enemyTimer);
+    alert('Game Over! You were defeated.');
+    player.hp = player.maxHp;
+    score = 0;
+    combo = 0;
+    localStorage.setItem('kanji-combat_score', score);
+    updateHealthUI(player, true);
+    spawnEnemy();
+}
+
+let activeEnemy = null; // New global to track current enemy (normal or boss)
+
+function spawnEnemy() {
+    // Check for Boss Spawn (Every 5th level: 5, 10, 15...)
+    // If score is 4, we are spawning the 5th enemy.
+    if ((score + 1) % 5 === 0) {
+        // BOSS BATTLE
+        const isDragon = Math.random() > 0.5;
+        activeEnemy = {
+            k: isDragon ? '竜' : '将軍',
+            r: isDragon ? 'ryuu' : 'shogun',
+            hp: 400,
+            maxHp: 400,
+            name: isDragon ? 'BOSS: Ancient Dragon' : 'BOSS: Dark Shogun',
+            atk: 25,
+            isBoss: true
+        };
+        // Reset rotation index so we don't skip a normal enemy, or maybe we do? 
+        // Let's just pause the rotation.
+        log(`⚠️ DANGER! ${activeEnemy.name} approaches!`, 'log-damage');
+        playTone(50, 'square', 1.0);
+    } else {
+        // Normal Enemy
+        const template = enemies[currentEnemyIdx];
+        // Clone it so we don't mutate the base stats permanently if we wanted to scale them
+        activeEnemy = { ...template }; 
+        // Reset HP if it was damaged in previous loop (the array object)
+        activeEnemy.hp = activeEnemy.maxHp; 
+    }
+
+    document.getElementById('enemy-name').innerText = activeEnemy.name;
+    document.getElementById('enemy-sprite').innerText = activeEnemy.k;
+    document.getElementById('target-kanji').innerText = activeEnemy.k;
+    
+    // Change border color for boss
+    document.getElementById('enemy').style.borderColor = activeEnemy.isBoss ? '#f1c40f' : '#e24a4a';
+
+    updateHealthUI(activeEnemy);
+    
+    if (!activeEnemy.isBoss) log(`⚔️ A wild ${activeEnemy.name} appears!`);
+    startEnemyTimer();
+}
+
+function submitCombat() {
+    const val = document.getElementById('combat-input').value.toLowerCase().trim();
+    
+    if(val === activeEnemy.r) {
+        // HIT
+        combo++;
+        let damage = 50 + (combo * 10);
+        
+        // Crit chance
+        if (Math.random() < 0.1) {
+            damage *= 1.5;
+            log(`CRITICAL HIT!`, 'log-win');
+        }
+        
+        activeEnemy.hp -= damage;
+        
+        playTone(150 + (combo*50), 'triangle', 0.1); 
+        
+        log(`You hit ${activeEnemy.name} for ${damage}! (Combo ${combo}x)`, 'log-hit');
+        updateHealthUI(activeEnemy);
+
+        attackProgress = Math.max(0, attackProgress - 20);
+
+        if(activeEnemy.hp <= 0) {
+            playTone(400, 'sine', 0.1); playTone(600, 'sine', 0.2); // Victory
+            log(`🏆 Defeated ${activeEnemy.name}!`, 'log-win');
+            
+            score++;
+            localStorage.setItem('kanji-combat_score', score);
+            document.getElementById('score-display').innerText = 'Oni Slain: ' + score;
+            
+            clearInterval(enemyTimer);
+            setTimeout(() => {
+                // Only advance index if it was a normal enemy, or always advance?
+                // If we fought a boss, we didn't use an index.
+                // Let's just always advance index to keep variety.
+                currentEnemyIdx = (currentEnemyIdx + 1) % enemies.length;
+                spawnEnemy();
+            }, 1000);
+        }
+    } else {
+        // MISS
+        combo = 0;
+        playTone(100, 'sawtooth', 0.1); 
+        log(`Miss!`, 'log-miss');
+        
+        const eDiv = document.getElementById('enemy');
+        eDiv.classList.add('shake');
+        setTimeout(() => eDiv.classList.remove('shake'), 500);
+    }
+    
+    document.getElementById('combo-display').innerText = `Combo: ${combo}x`;
+    document.getElementById('combat-input').value = '';
+    document.getElementById('combat-input').focus();
+}
+
+// Init
+let score = parseInt(localStorage.getItem('kanji-combat_score') || '0');
+document.getElementById('score-display').innerText = 'Oni Slain: ' + score;
+spawnEnemy();
+document.getElementById('combat-input').focus();
+
+</script>
+
+<footer style="margin-top: 50px; padding: 20px; text-align: center; color: #555; border-top: 1px solid #333;">
+    <p>Fleet App Suite v0.7 | Combat Updated</p>
+</footer>
+</body></html>
